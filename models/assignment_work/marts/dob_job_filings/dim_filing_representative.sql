@@ -4,7 +4,7 @@
 
 WITH source AS (
     SELECT *
-    FROM {{ source('raw', 'source_nyc_dob_job_apps') }}
+    FROM {{ ref('stg_nyc_dob_job_filing') }}
 ),
 
 cleaned AS (
