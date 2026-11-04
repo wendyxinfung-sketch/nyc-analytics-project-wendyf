@@ -7,11 +7,6 @@ WITH stg_dob AS (
     FROM {{ ref('stg_nyc_dob_job_filing') }}
 ),
 
-raw_dob AS (
-    SELECT *
-    FROM {{ source('raw', 'source_nyc_dob_job_apps') }}
-),
-
 distinct_filing_reps AS (
 
     SELECT DISTINCT
@@ -24,7 +19,7 @@ distinct_filing_reps AS (
         CAST(filing_representative_state AS STRING) AS state,
         CAST(filing_representative_zip AS STRING) AS zip
 
-    FROM raw_dob
+    FROM stg_dob
 
     WHERE filing_representative_first_name IS NOT NULL
        OR filing_representative_last_name IS NOT NULL
