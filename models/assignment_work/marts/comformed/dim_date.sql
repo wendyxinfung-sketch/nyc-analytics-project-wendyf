@@ -1,18 +1,20 @@
--- Date dimension shared by DOT 311 service requests and DOB NOW job filings
 
--- Build initial CTEs for Jinja syntax to make refs to staging models easier
+-- Date dimension shared by DOT 311 service requests
+-- and DOB NOW job filings
+
 WITH stg_311 AS (
-    SELECT * FROM {{ ref('YOUR-STAGING-DOT-311-SRs-MODEL-NAME-HERE') }}
+    SELECT *
+    FROM {{ ref('stg_nyc_311_dot') }}
 ),
 
 stg_dob AS (
-    SELECT * FROM {{ ref('YOUR-STAGING-DOB-JOB-FILINGS-MODEL-NAME-HERE') }}
+    SELECT *
+    FROM {{ ref('stg_nyc_dob_job_filing') }}
 ),
 
--- Then union dates from the staging data together, collecting all poss dates
+-- Collect distinct dates from staging data
 all_dates AS (
 
-    -- 311 service requests: date roles referenced by fact_311_service_request
     SELECT DISTINCT CAST(created_date AS DATE) AS full_date
     FROM stg_311
     WHERE created_date IS NOT NULL
@@ -23,40 +25,9 @@ all_dates AS (
     FROM stg_311
     WHERE closed_date IS NOT NULL
 
-    UNION DISTINCT
-
-    -- DOB NOW job filings: date roles referenced by fact_dob_job_filing
-    SELECT DISTINCT CAST(filing_date AS DATE) AS full_date
-    FROM stg_dob
-    WHERE filing_date IS NOT NULL
-
-    UNION DISTINCT
-
-    SELECT DISTINCT CAST(current_status_date AS DATE) AS full_date
-    FROM stg_dob
-    WHERE current_status_date IS NOT NULL
-
-    UNION DISTINCT
-
-    SELECT DISTINCT CAST(first_permit_date AS DATE) AS full_date
-    FROM stg_dob
-    WHERE first_permit_date IS NOT NULL
-
-    UNION DISTINCT
-
-    SELECT DISTINCT CAST(approved_date AS DATE) AS full_date
-    FROM stg_dob
-    WHERE approved_date IS NOT NULL
-
-    UNION DISTINCT
-
-    SELECT DISTINCT CAST(signoff_date AS DATE) AS full_date
-    FROM stg_dob
-    WHERE signoff_date IS NOT NULL
-
 ),
 
--- Date dimension with NYC fiscal year, Jul 1 - Jun 30, diff from federal
+-- Create the date dimension
 date_dimension AS (
 
     SELECT
@@ -73,7 +44,8 @@ date_dimension AS (
         EXTRACT(DAYOFWEEK FROM full_date) IN (1, 7) AS is_weekend,
 
         CASE
-            WHEN EXTRACT(MONTH FROM full_date) >= 7 THEN EXTRACT(YEAR FROM full_date) + 1
+            WHEN EXTRACT(MONTH FROM full_date) >= 7
+                THEN EXTRACT(YEAR FROM full_date) + 1
             ELSE EXTRACT(YEAR FROM full_date)
         END AS fiscal_year
 
@@ -81,11 +53,7 @@ date_dimension AS (
 
 ),
 
--- Null placeholder row: to handle NULL values.
--- Building fact tables should COALESCE a null source date to this key
--- Keeps all fact and date_dim joins INNER JOINs safely
--- Kimball convention to be explicit. (More to come on this)
-
+-- Null placeholder row
 null_placeholder AS (
 
     SELECT
@@ -99,10 +67,9 @@ null_placeholder AS (
         CAST(NULL AS INT64) AS day_of_week,
         CAST(NULL AS STRING) AS weekday_name,
         CAST(NULL AS BOOLEAN) AS is_weekend,
-        CAST(NULL AS INT64) AS fiscal_year 
-) 
--- make sure BQ knows the col types
+        CAST(NULL AS INT64) AS fiscal_year
 
+)
 
 SELECT * FROM date_dimension
 
