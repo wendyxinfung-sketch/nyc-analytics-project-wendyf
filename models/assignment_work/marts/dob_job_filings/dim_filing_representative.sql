@@ -1,75 +1,132 @@
 
--- Filing representative dimension for DOB NOW job filings
--- Grain: one row per distinct combination of filing representative attributes
+-- Clean and standardize DOB NOW job filings
+-- One row per source job filing record
 
-WITH stg_dob AS (
+WITH source AS (
     SELECT *
-    FROM {{ ref('stg_nyc_dob_job_filing') }}
+    FROM {{ source('raw', 'source_nyc_dob_job_apps') }}
 ),
 
-distinct_filing_reps AS (
-
-    SELECT DISTINCT
-        CAST(filing_representative_first_name AS STRING) AS first_name,
-        CAST(filing_representative_middle_initial AS STRING) AS middle_initial,
-        CAST(filing_representative_last_name AS STRING) AS last_name,
-        CAST(filing_representative_business_name AS STRING) AS business_name,
-        CAST(filing_representative_street_name AS STRING) AS street_name,
-        CAST(filing_representative_city AS STRING) AS city,
-        CAST(filing_representative_state AS STRING) AS state,
-        CAST(filing_representative_zip AS STRING) AS zip
-
-    FROM stg_dob
-
-    WHERE filing_representative_first_name IS NOT NULL
-       OR filing_representative_last_name IS NOT NULL
-       OR filing_representative_business_name IS NOT NULL
-       OR filing_representative_street_name IS NOT NULL
-       OR filing_representative_city IS NOT NULL
-       OR filing_representative_state IS NOT NULL
-       OR filing_representative_zip IS NOT NULL
-
-),
-
-dim_filing_rep AS (
-
+cleaned AS (
     SELECT
-        {{ dbt_utils.generate_surrogate_key([
-            'first_name', 'middle_initial', 'last_name', 'business_name',
-            'street_name', 'city', 'state', 'zip'
-        ]) }} AS filing_representative_key,
+        -- Identifiers
+        TRIM(CAST(job_filing_number AS STRING)) AS job_filing_number,
 
-        first_name,
-        middle_initial,
-        last_name,
-        business_name,
-        street_name,
-        city,
-        state,
-        zip
+        -- Filing details
+        UPPER(TRIM(CAST(filing_status AS STRING))) AS filing_status,
 
-    FROM distinct_filing_reps
+        -- Standardize borough names
+        CASE
+            WHEN UPPER(TRIM(borough)) IN ('MANHATTAN', 'NEW YORK')
+                THEN 'Manhattan'
+            WHEN UPPER(TRIM(borough)) IN ('BRONX', 'THE BRONX')
+                THEN 'Bronx'
+            WHEN UPPER(TRIM(borough)) = 'BROOKLYN'
+                THEN 'Brooklyn'
+            WHEN UPPER(TRIM(borough)) = 'QUEENS'
+                THEN 'Queens'
+            WHEN UPPER(TRIM(borough)) = 'STATEN ISLAND'
+                THEN 'Staten Island'
+            ELSE 'UNKNOWN or CITYWIDE'
+        END AS borough,
 
-),
+        -- Clean ZIP codes
+        CASE
+            WHEN REGEXP_CONTAINS(
+                TRIM(COALESCE(
+                    JSON_VALUE(TO_JSON_STRING(source), '$.zip'),
+                    JSON_VALUE(TO_JSON_STRING(source), '$.zip_code')
+                )),
+                r'^\d{5}$'
+            )
+            THEN TRIM(COALESCE(
+                JSON_VALUE(TO_JSON_STRING(source), '$.zip'),
+                JSON_VALUE(TO_JSON_STRING(source), '$.zip_code')
+            ))
+            ELSE NULL
+        END AS zip,
 
--- Null placeholder row for missing representatives
-null_placeholder AS (
+        -- Address
+        TRIM(CAST(house_no AS STRING)) AS house_no,
+        TRIM(CAST(street_name AS STRING)) AS street_name,
 
-    SELECT
-        '-1' AS filing_representative_key,
-        CAST(NULL AS STRING) AS first_name,
-        CAST(NULL AS STRING) AS middle_initial,
-        CAST(NULL AS STRING) AS last_name,
-        CAST(NULL AS STRING) AS business_name,
-        CAST(NULL AS STRING) AS street_name,
-        CAST(NULL AS STRING) AS city,
-        CAST(NULL AS STRING) AS state,
-        CAST(NULL AS STRING) AS zip
+        -- DOB dates
+        SAFE_CAST(
+            JSON_VALUE(TO_JSON_STRING(source), '$.filing_date')
+            AS DATE
+        ) AS filing_date,
 
+        SAFE_CAST(
+            JSON_VALUE(TO_JSON_STRING(source), '$.current_status_date')
+            AS DATE
+        ) AS current_status_date,
+
+        SAFE_CAST(
+            JSON_VALUE(TO_JSON_STRING(source), '$.first_permit_date')
+            AS DATE
+        ) AS first_permit_date,
+
+        SAFE_CAST(
+            JSON_VALUE(TO_JSON_STRING(source), '$.approved_date')
+            AS DATE
+        ) AS approved_date,
+
+        SAFE_CAST(
+            JSON_VALUE(TO_JSON_STRING(source), '$.signoff_date')
+            AS DATE
+        ) AS signoff_date,
+
+        -- Filing representative information
+        JSON_VALUE(
+            TO_JSON_STRING(source),
+            '$.filing_representative_first_name'
+        ) AS filing_representative_first_name,
+
+        JSON_VALUE(
+            TO_JSON_STRING(source),
+            '$.filing_representative_middle_initial'
+        ) AS filing_representative_middle_initial,
+
+        JSON_VALUE(
+            TO_JSON_STRING(source),
+            '$.filing_representative_last_name'
+        ) AS filing_representative_last_name,
+
+        JSON_VALUE(
+            TO_JSON_STRING(source),
+            '$.filing_representative_business_name'
+        ) AS filing_representative_business_name,
+
+        JSON_VALUE(
+            TO_JSON_STRING(source),
+            '$.filing_representative_street_name'
+        ) AS filing_representative_street_name,
+
+        JSON_VALUE(
+            TO_JSON_STRING(source),
+            '$.filing_representative_city'
+        ) AS filing_representative_city,
+
+        JSON_VALUE(
+            TO_JSON_STRING(source),
+            '$.filing_representative_state'
+        ) AS filing_representative_state,
+
+        JSON_VALUE(
+            TO_JSON_STRING(source),
+            '$.filing_representative_zip'
+        ) AS filing_representative_zip,
+
+        -- Metadata
+        CURRENT_TIMESTAMP() AS _stg_loaded_at
+
+    FROM source
+
+    WHERE NULLIF(
+        TRIM(CAST(job_filing_number AS STRING)), ''
+    ) IS NOT NULL
 )
 
-SELECT * FROM dim_filing_rep
+SELECT *
+FROM cleaned
 
-UNION ALL
-
-SELECT * FROM null_placeholder
