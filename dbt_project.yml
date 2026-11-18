@@ -1,6 +1,8 @@
+
 name: "nyc_analytics"
 version: "1.0.0"
 config-version: 2
+
 # Some default settings for dbt
 profile: "default"
 
@@ -21,6 +23,7 @@ models:
   nyc_analytics:
     +materialized: table
 
+    # Homework 4
     assignment_work:
       staging:
         +materialized: table
@@ -38,3 +41,14 @@ models:
 
         dot_311:
           +materialized: table
+
+    # Group 1 Milestone 4
+    Group_1_Milestone_4:
+      staging:
+        +materialized: table
+        +schema: cis9440_project_g1_staging
+
+      marts:
+        +materialized: table
+        +schema: cis9440_project_g1_marts
+

@@ -1,0 +1,11 @@
+
+version: 2
+
+sources:
+  - name: group1_raw
+    database: wendyf-cis-baruch
+    schema: cis9440_project_g1_raw_data
+
+    tables:
+      - name: source_motor_vehicle_collisions
+      - name: source_311_dot_requests
